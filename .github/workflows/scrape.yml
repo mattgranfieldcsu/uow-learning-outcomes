@@ -62,7 +62,7 @@ jobs:
 
       - name: Tag learning outcomes (Bloom's / category)
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python -m db.tagger
         # Don't fail the whole workflow if tagging fails
         continue-on-error: true
