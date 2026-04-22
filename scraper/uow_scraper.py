@@ -337,6 +337,10 @@ def run(codes_file: Optional[str] = None, limit: Optional[int] = None):
                     If omitted, codes are discovered from the search page.
         limit:      Stop after N subjects (useful for testing).
     """
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
     from tqdm import tqdm
     from db.loader import load_subject  # imported here to avoid circular imports
 
