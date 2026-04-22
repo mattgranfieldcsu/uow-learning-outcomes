@@ -369,6 +369,17 @@ def run(codes_file: Optional[str] = None, limit: Optional[int] = None):
         else:
             subjects_meta = get_all_subject_codes(page)
 
+        # If dynamic discovery found nothing, fall back to seed list
+        if not subjects_meta:
+            seed_path = Path(__file__).parent.parent / "data" / "seed_codes.txt"
+            if seed_path.exists():
+                log.info(f"Dynamic discovery found 0 subjects — falling back to seed list")
+                raw_codes = seed_path.read_text().splitlines()
+                subjects_meta = [
+                    {"code": c.strip(), "name": ""} for c in raw_codes if c.strip()
+                ]
+                log.info(f"Loaded {len(subjects_meta)} codes from seed list")
+
         if limit:
             subjects_meta = subjects_meta[:limit]
 
