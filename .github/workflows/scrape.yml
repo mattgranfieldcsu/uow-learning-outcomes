@@ -1,0 +1,103 @@
+name: Scrape UOW Learning Outcomes
+
+on:
+  schedule:
+    # Run at 2am AEST (16:00 UTC) every Sunday
+    - cron: '0 16 * * 0'
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Max subjects to scrape (leave blank for all)'
+        required: false
+        default: ''
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180   # 3 hours max (full scrape ~2h)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium --with-deps
+
+      # Restore previously scraped raw JSON files and database
+      # so we don't re-scrape subjects we already have
+      - name: Restore cached data
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/raw
+            data/outcomes.db
+          key: scraped-data-${{ github.run_id }}
+          restore-keys: |
+            scraped-data-
+
+      - name: Initialise database
+        run: python -m db.loader
+
+      - name: Run scraper
+        run: |
+          LIMIT="${{ github.event.inputs.limit }}"
+          if [ -n "$LIMIT" ]; then
+            python scraper/uow_scraper.py --limit "$LIMIT"
+          else
+            python scraper/uow_scraper.py
+          fi
+
+      - name: Tag learning outcomes (Bloom's / category)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python -m db.tagger
+        # Don't fail the whole workflow if tagging fails
+        continue-on-error: true
+
+      - name: Export CSV snapshot
+        run: |
+          python query.py export --format csv --out data/outcomes_snapshot.csv
+          python query.py export --format jsonl --out data/outcomes_snapshot.jsonl
+
+      - name: Print stats
+        run: python query.py stats
+
+      # Save the database and raw files as a build artifact
+      - name: Upload data artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: outcomes-data-${{ github.run_id }}
+          path: |
+            data/outcomes.db
+            data/outcomes_snapshot.csv
+            data/outcomes_snapshot.jsonl
+          retention-days: 90
+
+      # Commit the CSV snapshot back to the repo so it's browsable on GitHub
+      - name: Commit CSV snapshot to repo
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/outcomes_snapshot.csv data/outcomes_snapshot.jsonl
+          git diff --staged --quiet || git commit -m "chore: update outcomes snapshot [$(date -u +%Y-%m-%d)]"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Alert on failure
+      - name: Notify on failure
+        if: failure()
+        run: echo "Scrape job failed — check logs above."

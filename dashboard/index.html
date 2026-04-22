@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Learning Outcomes Explorer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,wght@0,300;0,600;1,300&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink:    #0f0e0d;
+    --paper:  #f5f0e8;
+    --warm:   #e8dfc8;
+    --mid:    #c4b89a;
+    --muted:  #8a7f6e;
+    --accent: #c84b2f;
+    --green:  #2a6b4a;
+    --blue:   #2c4a7c;
+    --mono:   'DM Mono', monospace;
+    --serif:  'Fraunces', Georgia, serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 13px;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--ink);
+    color: var(--paper);
+    padding: 20px 32px;
+    display: flex;
+    align-items: baseline;
+    gap: 20px;
+    border-bottom: 3px solid var(--accent);
+  }
+
+  header h1 {
+    font-family: var(--serif);
+    font-weight: 300;
+    font-size: 22px;
+    letter-spacing: -0.02em;
+    color: var(--paper);
+  }
+
+  header h1 em {
+    font-style: italic;
+    color: var(--mid);
+  }
+
+  .header-meta {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-left: auto;
+  }
+
+  /* ── Layout ── */
+  .shell {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    min-height: calc(100vh - 69px);
+  }
+
+  /* ── Sidebar ── */
+  aside {
+    background: var(--warm);
+    border-right: 1px solid var(--mid);
+    padding: 24px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    position: sticky;
+    top: 0;
+    height: calc(100vh - 69px);
+    overflow-y: auto;
+  }
+
+  .panel-label {
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+    font-weight: 500;
+  }
+
+  .search-wrap {
+    position: relative;
+  }
+
+  .search-wrap input {
+    width: 100%;
+    background: var(--paper);
+    border: 1.5px solid var(--mid);
+    border-radius: 3px;
+    padding: 8px 10px;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--ink);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .search-wrap input:focus {
+    border-color: var(--accent);
+  }
+
+  .search-btn {
+    position: absolute;
+    right: 8px; top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--accent);
+    font-size: 14px;
+    padding: 2px;
+  }
+
+  .filter-group select {
+    width: 100%;
+    background: var(--paper);
+    border: 1.5px solid var(--mid);
+    border-radius: 3px;
+    padding: 7px 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink);
+    outline: none;
+    appearance: none;
+    cursor: pointer;
+  }
+
+  .stats-block {
+    background: var(--ink);
+    color: var(--paper);
+    border-radius: 4px;
+    padding: 14px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .stat-item {}
+  .stat-n {
+    font-family: var(--serif);
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--paper);
+  }
+  .stat-label {
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-top: 2px;
+  }
+
+  /* Bloom distribution */
+  .bloom-bars {}
+  .bloom-row {
+    display: grid;
+    grid-template-columns: 72px 1fr 28px;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 5px;
+    font-size: 11px;
+  }
+  .bloom-name { color: var(--muted); }
+  .bloom-bar-track {
+    background: var(--mid);
+    border-radius: 2px;
+    height: 6px;
+    overflow: hidden;
+  }
+  .bloom-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.4s ease;
+  }
+  .bloom-count {
+    color: var(--muted);
+    text-align: right;
+  }
+
+  /* Category pills */
+  .cat-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .cat-pill {
+    background: var(--paper);
+    border: 1.5px solid var(--mid);
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+    color: var(--muted);
+  }
+  .cat-pill.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+
+  /* ── Main ── */
+  main {
+    padding: 24px 28px;
+    overflow-y: auto;
+  }
+
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--warm);
+  }
+
+  .result-count {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+  }
+
+  .view-toggle {
+    margin-left: auto;
+    display: flex;
+    gap: 4px;
+  }
+
+  .view-btn {
+    background: none;
+    border: 1.5px solid var(--mid);
+    border-radius: 3px;
+    padding: 4px 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+    color: var(--muted);
+    transition: all 0.15s;
+  }
+  .view-btn.active {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--paper);
+  }
+
+  /* ── Result cards ── */
+  .results { display: flex; flex-direction: column; gap: 1px; }
+
+  .result-card {
+    background: white;
+    border: 1px solid var(--warm);
+    border-radius: 4px;
+    padding: 14px 16px;
+    display: grid;
+    grid-template-columns: 90px 1fr auto;
+    gap: 0 14px;
+    align-items: start;
+    cursor: pointer;
+    transition: all 0.12s;
+    margin-bottom: 6px;
+  }
+  .result-card:hover {
+    border-color: var(--mid);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    transform: translateX(2px);
+  }
+
+  .card-code {
+    font-weight: 500;
+    color: var(--accent);
+    font-size: 13px;
+    padding-top: 1px;
+  }
+  .card-subject {
+    font-family: var(--serif);
+    font-size: 13px;
+    font-weight: 300;
+    color: var(--muted);
+    margin-bottom: 2px;
+  }
+  .card-outcome {
+    color: var(--ink);
+    line-height: 1.5;
+    font-size: 13px;
+  }
+
+  .card-tags {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: flex-end;
+  }
+
+  .tag {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 2px;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .tag-bloom-remember   { background: #e8f4e8; color: #2a5a2a; }
+  .tag-bloom-understand { background: #e8eef8; color: #2c4a7c; }
+  .tag-bloom-apply      { background: #fef4e8; color: #8a5a20; }
+  .tag-bloom-analyse    { background: #f8e8f4; color: #6a2a6a; }
+  .tag-bloom-evaluate   { background: #fce8e8; color: #8a2a2a; }
+  .tag-bloom-create     { background: #1a1a1a; color: #f0f0f0; }
+
+  .tag-cat {
+    background: var(--warm);
+    color: var(--muted);
+  }
+
+  /* ── Subject detail panel ── */
+  .detail-panel {
+    display: none;
+    position: fixed;
+    top: 0; right: 0;
+    width: 520px;
+    height: 100vh;
+    background: var(--paper);
+    border-left: 2px solid var(--ink);
+    overflow-y: auto;
+    z-index: 100;
+    animation: slideIn 0.2s ease;
+  }
+
+  @keyframes slideIn {
+    from { transform: translateX(40px); opacity: 0; }
+    to   { transform: translateX(0);    opacity: 1; }
+  }
+
+  .detail-panel.open { display: block; }
+
+  .detail-header {
+    background: var(--ink);
+    color: var(--paper);
+    padding: 20px 24px;
+    position: sticky;
+    top: 0;
+  }
+
+  .detail-close {
+    position: absolute;
+    top: 16px; right: 20px;
+    background: none;
+    border: none;
+    color: var(--mid);
+    font-size: 20px;
+    cursor: pointer;
+    line-height: 1;
+  }
+
+  .detail-code {
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .detail-name {
+    font-family: var(--serif);
+    font-size: 20px;
+    font-weight: 300;
+    line-height: 1.2;
+    color: var(--paper);
+  }
+
+  .detail-meta {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
+  .detail-body { padding: 24px; }
+
+  .detail-section {
+    margin-bottom: 24px;
+  }
+
+  .detail-section h3 {
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--warm);
+  }
+
+  .detail-description {
+    color: var(--ink);
+    line-height: 1.6;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .lo-list { list-style: none; }
+  .lo-item {
+    display: grid;
+    grid-template-columns: 20px 1fr auto;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--warm);
+    align-items: start;
+  }
+  .lo-num {
+    color: var(--mid);
+    font-size: 11px;
+    padding-top: 2px;
+  }
+  .lo-text { line-height: 1.5; color: var(--ink); }
+
+  .assessment-list {}
+  .assessment-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--warm);
+    font-size: 12px;
+  }
+  .assessment-weight {
+    font-weight: 500;
+    color: var(--accent);
+  }
+
+  .detail-link {
+    display: inline-block;
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--blue);
+    text-decoration: none;
+  }
+  .detail-link:hover { text-decoration: underline; }
+
+  /* ── Empty state ── */
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--muted);
+  }
+  .empty-state .big { font-size: 40px; margin-bottom: 12px; }
+  .empty-state p { font-family: var(--serif); font-size: 16px; font-weight: 300; }
+
+  /* ── Loading ── */
+  .loading {
+    text-align: center;
+    padding: 40px;
+    color: var(--muted);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 12px; height: 12px;
+    border: 2px solid var(--mid);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Overlay */
+  .overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(15,14,13,0.4);
+    z-index: 99;
+    cursor: pointer;
+  }
+  .overlay.open { display: block; }
+
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Learning Outcomes <em>Explorer</em></h1>
+  <span class="header-meta" id="header-uni">University of Wollongong · 2026</span>
+</header>
+
+<div class="shell">
+
+  <!-- ── Sidebar ── -->
+  <aside>
+
+    <div>
+      <div class="panel-label">Search</div>
+      <div class="search-wrap">
+        <input type="text" id="search-input" placeholder="e.g. critical thinking…" autocomplete="off">
+        <button class="search-btn" onclick="doSearch()">↵</button>
+      </div>
+    </div>
+
+    <div class="filter-group">
+      <div class="panel-label">Faculty</div>
+      <select id="faculty-filter" onchange="doSearch()">
+        <option value="">All faculties</option>
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <div class="panel-label">Bloom's Level</div>
+      <select id="bloom-filter" onchange="doSearch()">
+        <option value="">All levels</option>
+        <option value="remember">Remember</option>
+        <option value="understand">Understand</option>
+        <option value="apply">Apply</option>
+        <option value="analyse">Analyse</option>
+        <option value="evaluate">Evaluate</option>
+        <option value="create">Create</option>
+      </select>
+    </div>
+
+    <div>
+      <div class="panel-label">Stats</div>
+      <div class="stats-block">
+        <div class="stat-item">
+          <div class="stat-n" id="stat-subjects">—</div>
+          <div class="stat-label">Subjects</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-n" id="stat-outcomes">—</div>
+          <div class="stat-label">Outcomes</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-n" id="stat-faculties">—</div>
+          <div class="stat-label">Faculties</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-n" id="stat-avg">—</div>
+          <div class="stat-label">Avg / subject</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel-label">Bloom's Distribution</div>
+      <div class="bloom-bars" id="bloom-bars"></div>
+    </div>
+
+  </aside>
+
+  <!-- ── Main ── -->
+  <main>
+    <div class="toolbar">
+      <span class="result-count" id="result-count">Enter a search to begin</span>
+      <div class="view-toggle">
+        <button class="view-btn active" onclick="setView('outcomes')">By Outcome</button>
+        <button class="view-btn" onclick="setView('subjects')">By Subject</button>
+      </div>
+    </div>
+    <div id="results-container">
+      <div class="empty-state">
+        <div class="big">⌕</div>
+        <p>Search for a skill, topic, or keyword.<br>Or browse by faculty and Bloom's level.</p>
+      </div>
+    </div>
+  </main>
+
+</div>
+
+<!-- ── Detail Panel ── -->
+<div class="overlay" id="overlay" onclick="closeDetail()"></div>
+<div class="detail-panel" id="detail-panel">
+  <div class="detail-header">
+    <button class="detail-close" onclick="closeDetail()">×</button>
+    <div class="detail-code" id="dp-code"></div>
+    <div class="detail-name" id="dp-name"></div>
+    <div class="detail-meta" id="dp-meta"></div>
+  </div>
+  <div class="detail-body" id="dp-body"></div>
+</div>
+
+<script>
+const BLOOM_ORDER = ['remember','understand','apply','analyse','evaluate','create'];
+let currentView   = 'outcomes';
+let lastResults   = [];
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+async function init() {
+  await loadStats();
+  await loadFaculties();
+
+  document.getElementById('search-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doSearch();
+  });
+
+  // Initial load: all outcomes (empty search)
+  doSearch();
+}
+
+async function loadStats() {
+  const stats = await fetchJSON('/api/stats');
+  document.getElementById('stat-subjects').textContent  = fmt(stats.subjects);
+  document.getElementById('stat-outcomes').textContent  = fmt(stats.outcomes);
+  document.getElementById('stat-faculties').textContent = fmt(stats.faculties);
+  document.getElementById('stat-avg').textContent       = stats.avg_outcomes || '—';
+
+  // Bloom bars
+  const maxN = Math.max(...stats.by_bloom.map(b => b.n));
+  const bloomMap = {};
+  stats.by_bloom.forEach(b => bloomMap[b.bloom_level] = b.n);
+
+  const bars = document.getElementById('bloom-bars');
+  bars.innerHTML = BLOOM_ORDER.map(level => {
+    const n   = bloomMap[level] || 0;
+    const pct = maxN ? Math.round(n / maxN * 100) : 0;
+    return `<div class="bloom-row">
+      <span class="bloom-name">${level}</span>
+      <div class="bloom-bar-track"><div class="bloom-bar-fill" style="width:${pct}%"></div></div>
+      <span class="bloom-count">${n}</span>
+    </div>`;
+  }).join('');
+}
+
+async function loadFaculties() {
+  const faculties = await fetchJSON('/api/faculties');
+  const sel = document.getElementById('faculty-filter');
+  faculties.forEach(f => {
+    const opt = document.createElement('option');
+    opt.value = f; opt.textContent = f;
+    sel.appendChild(opt);
+  });
+}
+
+// ── Search ────────────────────────────────────────────────────────────────────
+
+async function doSearch() {
+  const q       = document.getElementById('search-input').value.trim();
+  const faculty = document.getElementById('faculty-filter').value;
+  const bloom   = document.getElementById('bloom-filter').value;
+
+  const params = new URLSearchParams({ limit: 200 });
+  if (q)       params.set('q', q);
+  if (faculty) params.set('faculty', faculty);
+  if (bloom)   params.set('bloom', bloom);
+
+  showLoading();
+  const results = await fetchJSON(`/api/search?${params}`);
+  lastResults = results;
+  renderResults(results);
+}
+
+function renderResults(results) {
+  const container = document.getElementById('results-container');
+  document.getElementById('result-count').textContent =
+    `${results.length} outcome${results.length !== 1 ? 's' : ''} found`;
+
+  if (!results.length) {
+    container.innerHTML = `<div class="empty-state">
+      <div class="big">∅</div>
+      <p>No outcomes matched your filters.</p>
+    </div>`;
+    return;
+  }
+
+  if (currentView === 'subjects') {
+    renderBySubject(results, container);
+  } else {
+    renderByOutcome(results, container);
+  }
+}
+
+function renderByOutcome(results, container) {
+  container.innerHTML = `<div class="results">${
+    results.map(r => `
+      <div class="result-card" onclick="openDetail('${r.code}')">
+        <div>
+          <div class="card-code">${r.code}</div>
+        </div>
+        <div>
+          <div class="card-subject">${escHtml(r.subject_name)}</div>
+          <div class="card-outcome">${escHtml(r.outcome)}</div>
+        </div>
+        <div class="card-tags">
+          ${r.bloom_level ? `<span class="tag tag-bloom-${r.bloom_level}">${r.bloom_level}</span>` : ''}
+          ${r.category    ? `<span class="tag tag-cat">${r.category}</span>` : ''}
+        </div>
+      </div>
+    `).join('')
+  }</div>`;
+}
+
+function renderBySubject(results, container) {
+  // Group by subject code
+  const grouped = {};
+  results.forEach(r => {
+    if (!grouped[r.code]) grouped[r.code] = { ...r, outcomes: [] };
+    grouped[r.code].outcomes.push(r);
+  });
+
+  const cards = Object.values(grouped).map(g => `
+    <div class="result-card" style="display:block" onclick="openDetail('${g.code}')">
+      <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+        <div>
+          <span class="card-code">${g.code}</span>
+          <span style="color:var(--muted);margin-left:8px;font-size:12px">${escHtml(g.subject_name)}</span>
+        </div>
+        <span style="font-size:11px;color:var(--muted)">${g.outcomes.length} outcome${g.outcomes.length !== 1 ? 's' : ''}</span>
+      </div>
+      <ul style="list-style:none;padding:0">
+        ${g.outcomes.slice(0, 3).map((o, i) => `
+          <li style="padding:4px 0;border-top:1px solid var(--warm);display:flex;gap:8px;align-items:start">
+            <span style="color:var(--mid);min-width:16px;font-size:11px">${i+1}.</span>
+            <span style="font-size:12px;line-height:1.4;color:var(--ink)">${escHtml(o.outcome)}</span>
+          </li>
+        `).join('')}
+        ${g.outcomes.length > 3 ? `<li style="padding:4px 0;border-top:1px solid var(--warm);color:var(--muted);font-size:11px">+${g.outcomes.length - 3} more…</li>` : ''}
+      </ul>
+    </div>
+  `).join('');
+
+  container.innerHTML = `<div class="results">${cards}</div>`;
+}
+
+// ── Detail Panel ──────────────────────────────────────────────────────────────
+
+async function openDetail(code) {
+  const data = await fetchJSON(`/api/subject/${code}`);
+  if (data.error) return;
+
+  document.getElementById('dp-code').textContent = data.code;
+  document.getElementById('dp-name').textContent = data.name;
+  document.getElementById('dp-meta').textContent =
+    [data.faculty, data.credit_points ? `${data.credit_points} cp` : null]
+    .filter(Boolean).join(' · ');
+
+  let html = '';
+
+  if (data.description) {
+    html += `<div class="detail-section">
+      <h3>Description</h3>
+      <p class="detail-description">${escHtml(data.description)}</p>
+    </div>`;
+  }
+
+  if (data.learning_outcomes?.length) {
+    const los = data.learning_outcomes.map(lo => `
+      <li class="lo-item">
+        <span class="lo-num">${lo.sequence}</span>
+        <span class="lo-text">${escHtml(lo.outcome)}</span>
+        <div style="display:flex;flex-direction:column;gap:3px;align-items:flex-end">
+          ${lo.bloom_level ? `<span class="tag tag-bloom-${lo.bloom_level}" style="font-size:9px">${lo.bloom_level}</span>` : ''}
+          ${lo.category    ? `<span class="tag tag-cat" style="font-size:9px">${lo.category}</span>` : ''}
+        </div>
+      </li>
+    `).join('');
+    html += `<div class="detail-section">
+      <h3>Learning Outcomes (${data.learning_outcomes.length})</h3>
+      <ul class="lo-list">${los}</ul>
+    </div>`;
+  }
+
+  if (data.assessments?.length) {
+    const rows = data.assessments.map(a => `
+      <div class="assessment-row">
+        <span>${escHtml(a.name || a.type || '—')}</span>
+        ${a.weight ? `<span class="assessment-weight">${a.weight}%</span>` : ''}
+      </div>
+    `).join('');
+    html += `<div class="detail-section">
+      <h3>Assessments</h3>
+      ${rows}
+    </div>`;
+  }
+
+  if (data.url) {
+    html += `<div class="detail-section">
+      <a href="${data.url}" target="_blank" class="detail-link">
+        View in UOW Handbook ↗
+      </a>
+    </div>`;
+  }
+
+  document.getElementById('dp-body').innerHTML = html;
+  document.getElementById('detail-panel').classList.add('open');
+  document.getElementById('overlay').classList.add('open');
+}
+
+function closeDetail() {
+  document.getElementById('detail-panel').classList.remove('open');
+  document.getElementById('overlay').classList.remove('open');
+}
+
+// ── View toggle ───────────────────────────────────────────────────────────────
+
+function setView(v) {
+  currentView = v;
+  document.querySelectorAll('.view-btn').forEach((btn, i) => {
+    btn.classList.toggle('active', (i === 0) === (v === 'outcomes'));
+  });
+  if (lastResults.length) renderResults(lastResults);
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function showLoading() {
+  document.getElementById('results-container').innerHTML =
+    `<div class="loading"><span class="spinner"></span> Searching…</div>`;
+}
+
+async function fetchJSON(url) {
+  const res = await fetch(url);
+  return res.json();
+}
+
+function fmt(n) {
+  return n?.toLocaleString() ?? '—';
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+
+init();
+</script>
+</body>
+</html>

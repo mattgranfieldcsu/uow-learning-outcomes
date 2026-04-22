@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.env
+data/raw/          # raw JSON excluded from git (too large)
+data/outcomes.db   # binary DB excluded — use the CSV snapshot instead
+scraper.log
+failed_codes.txt
+
+# Keep the data directory and snapshots
+!data/
+!data/.gitkeep
+!data/outcomes_snapshot.csv
+!data/outcomes_snapshot.jsonl
