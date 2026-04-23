@@ -9,43 +9,33 @@ on:
       limit:
         description: 'Max subjects to scrape (leave blank for all)'
         required: false
-        default: ''
+        default: '20'
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 180   # 3 hours max (full scrape ~2h)
+    timeout-minutes: 180
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Cache pip dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
           playwright install chromium --with-deps
 
-      # Restore previously scraped raw JSON files and database
-      - name: Restore cached data
-        uses: actions/cache@v4
-        with:
-          path: |
-            data/raw
-            data/outcomes.db
-          key: scraped-data-${{ github.run_id }}
-          restore-keys: |
-            scraped-data-
+      # We skip the cache restore for this run to ensure we aren't 
+      # accidentally loading an empty 'ghost' database.
+      - name: Ensure data directory exists
+        run: mkdir -p data/raw
 
       - name: Initialise database
         run: python -m db.loader
@@ -63,40 +53,33 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python -m db.tagger
-        # Don't fail the whole workflow if tagging fails
         continue-on-error: true
 
-      # Updated to use your robust new export script
       - name: Export CSV snapshot
         run: |
           python db/export_csv.py
 
       - name: Print stats
-        # We use a try/except or simple check here in case query.py is still needed for stats
         run: python query.py stats || echo "Stats script not found, skipping."
 
-      # Save the database and raw files as a build artifact
+      # This is the "Safety Net": It saves the DB as an artifact you can download 
+      # directly from the Actions UI if the Git push fails.
       - name: Upload data artifact
         uses: actions/upload-artifact@v4
         with:
-          name: outcomes-data-${{ github.run_id }}
+          name: outcomes-data
           path: |
             data/outcomes.db
             data/outcomes_snapshot.csv
-          retention-days: 90
+          retention-days: 7
 
-      # Commit the CSV snapshot back to the repo so it's browsable on GitHub
-      - name: Commit CSV snapshot to repo
+      - name: Commit and Push Data
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/outcomes_snapshot.csv
-          git diff --staged --quiet || git commit -m "chore: update outcomes snapshot [$(date -u +%Y-%m-%d)]"
+          git add data/outcomes_snapshot.csv data/outcomes.db
+          # The '|| exit 0' ensures the workflow doesn't fail if there's nothing new to commit
+          git commit -m "chore: update outcomes data [$(date -u +%Y-%m-%d)]" || exit 0
           git push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # Alert on failure
-      - name: Notify on failure
-        if: failure()
-        run: echo "Scrape job failed — check logs above."
