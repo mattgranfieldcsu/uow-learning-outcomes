@@ -33,11 +33,9 @@ jobs:
       - name: Prepare Data Directory
         run: mkdir -p data
 
-      - name: Run Scraper
+	- name: Run Scraper
         run: |
-          # Remove the old DB to ensure we don't have "500 error" ghosts
           rm -f data/outcomes.db
-          # Run the scraper file directly
           python scraper/uow_scraper.py --limit ${{ github.event.inputs.limit || 20 }}
 
       - name: Commit and Push Results
