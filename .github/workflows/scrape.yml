@@ -26,24 +26,34 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          # Ensure playwright and other basics are installed
+          # Essential packages for the scraper to run in the cloud
           pip install playwright
           playwright install chromium
 
       - name: Prepare Data Directory
         run: mkdir -p data
 
-	- name: Run Scraper
+      - name: Run Scraper
         run: |
+          # Clean out the old database to ensure fresh results
           rm -f data/outcomes.db
+          # Direct execution of the scraper file
           python scraper/uow_scraper.py --limit ${{ github.event.inputs.limit || 20 }}
 
       - name: Commit and Push Results
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Stage all data changes
           git add -f data/
-          git commit -m "Results: Fresh UOW scrape [$(date -u +%Y-%m-%d)]" || echo "No changes"
-          git push origin main
+          
+          # Only commit if data was actually found and saved
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Results: Fresh UOW scrape [$(date -u +%Y-%m-%d)]"
+            git push origin main
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
