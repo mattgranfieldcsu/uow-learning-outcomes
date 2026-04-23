@@ -6,7 +6,8 @@ learning outcomes, assessments, and subject metadata.
 Run from the project root:
     python scraper/uow_scraper.py
 """
-
+import sys
+import os
 import json
 import time
 import random
