@@ -1,223 +1,106 @@
-"""
-UOW Learning Outcomes Scraper
-Fetches all subjects from the UOW CourseLoop handbook and extracts
-learning outcomes, assessments, and subject metadata.
-
-Run from the project root:
-    python scraper/uow_scraper.py
-"""
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import json
-import time
+import asyncio
 import random
-import logging
-import argparse
-import subprocess
-from pathlib import Path
+from playwright.async_api import async_playwright, Page
 from datetime import datetime
-from typing import Optional
 
-from playwright.sync_api import sync_playwright, Page, Response
+# ─── CONFIGURATION ──────────────────────────────────────────────────────────
+BASE_URL = "https://courses.uow.edu.au/search"
+YEAR = "2026"
 
-# ── Logging ──────────────────────────────────────────────────────────────────
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler("scraper.log"),
-        logging.StreamHandler(),
-    ],
-)
-log = logging.getLogger(__name__)
-
-# ── Config ───────────────────────────────────────────────────────────────────
-
-BASE_URL   = "https://courses.uow.edu.au"
-YEAR       = 2026
-DELAY_MIN  = 2.0   # Be polite to UOW servers
-DELAY_MAX  = 4.5
-TIMEOUT    = 30_000
-
-RAW_DIR    = Path("data/raw")
-RAW_DIR.mkdir(parents=True, exist_ok=True)
-
-# ── Step 1: Discover all subject codes ───────────────────────────────────────
-
-def get_all_subject_codes(page: Page) -> list[dict]:
-    """Intercept CourseLoop API or fallback to DOM scrape."""
-    subject_list = []
-    api_responses = {}
-
-    def handle_response(response: Response):
-        url = response.url
-        if "courseapi" in url and ("search" in url or "subject" in url):
-            try:
-                data = response.json()
-                api_responses[url] = data
-            except Exception:
-                pass
-
-    page.on("response", handle_response)
-
-    log.info("Loading UOW subject search page...")
-    page.goto(
-        f"{BASE_URL}/search?ct=subject&year={YEAR}",
-        wait_until="networkidle",
-        timeout=TIMEOUT,
-    )
-    time.sleep(3)
-
-    for url, data in api_responses.items():
-        subjects = _parse_search_response(data)
-        if subjects:
-            subject_list.extend(subjects)
-
-    if not subject_list:
-        log.info("No API capture — extracting from DOM...")
-        subject_list = _extract_subjects_from_dom(page)
-
-    return subject_list
-
-def _parse_search_response(data: dict | list) -> list[dict]:
-    subjects = []
-    items = []
-    if isinstance(data, list):
-        items = data
-    elif isinstance(data, dict):
-        items = data.get("items") or data.get("results") or data.get("data") or []
-
-    for item in items:
-        code = item.get("code") or item.get("subjectCode")
-        name = item.get("name") or item.get("title")
-        if code and name:
-            subjects.append({"code": code.strip(), "name": name.strip()})
-    return subjects
-
-def _extract_subjects_from_dom(page: Page) -> list[dict]:
-    subjects = []
-    for _ in range(5):
-        page.keyboard.press("End")
-        time.sleep(0.5)
-
-    anchors = page.query_selector_all('a[href*="/subject/"]')
-    for a in anchors:
-        href = a.get_attribute("href") or ""
-        parts = href.rstrip("/").split("/")
-        if len(parts) >= 2:
-            code = parts[-1]
-            name = (a.inner_text() or "").strip()
-            if code and name:
-                subjects.append({"code": code, "name": name})
-    return subjects
-
-# ── Step 2: Scrape individual subject pages ───────────────────────────────────
-
-def scrape_subject(page: Page, code: str, year: int = YEAR) -> Optional[dict]:
-    url  = f"{BASE_URL}/subject/{year}/{code}?year={year}"
-    captured = {}
-
-    def handle_response(response: Response):
-        if "courseapi" in response.url and code.lower() in response.url.lower():
-            try:
-                captured["json"] = response.json()
-            except Exception:
-                pass
-
-    page.on("response", handle_response)
-
-    try:
-        page.goto(url, wait_until="networkidle", timeout=TIMEOUT)
-        time.sleep(1.5)
-        return _parse_subject_json(captured["json"], code, url) if captured.get("json") else _parse_subject_dom(page, code, url)
-    except Exception as e:
-        log.warning(f"Failed to scrape {code}: {e}")
-        return None
-    finally:
-        page.remove_listener("response", handle_response)
-
-def _parse_subject_json(raw: dict, code: str, url: str) -> dict:
-    subject = raw.get("subject") or raw.get("data") or raw
-    lo_source = subject.get("learningOutcomes") or subject.get("outcomes") or []
+async def scrape_subject(page: Page, code: str):
+    """
+    Mimics a human user: Goes to search page, types the code, 
+    clicks the result, and extracts outcomes.
+    """
+    print(f"--- Processing {code} ---")
     
-    learning_outcomes = []
-    for i, lo in enumerate(lo_source, start=1):
-        text = lo if isinstance(lo, str) else lo.get("description", "")
-        if text:
-            learning_outcomes.append({"sequence": i, "outcome": text.strip()})
-
-    return {
-        "code": code,
-        "name": subject.get("name") or subject.get("title") or "",
-        "year": YEAR,
-        "description": (subject.get("description") or "").strip(),
-        "url": url,
-        "learning_outcomes": learning_outcomes,
-        "raw": raw
-    }
-
-def _parse_subject_dom(page: Page, code: str, url: str) -> dict:
-    # Basic fallback if API intercept fails
-    return {
-        "code": code,
-        "name": (page.query_selector("h1").inner_text() if page.query_selector("h1") else ""),
-        "year": YEAR,
-        "url": url,
-        "learning_outcomes": [],
-        "note": "DOM Fallback used"
-    }
-
-# ── Main ──────────────────────────────────────────────────────────────────────
-
-def run(limit: Optional[int] = None):
-    # Auto-pull to stay in sync with GitHub Actions
     try:
-        log.info("Syncing with remote repository...")
-        subprocess.run(["git", "pull", "--rebase"], check=False)
+        # 1. Start at the search page to establish a valid session
+        await page.goto(BASE_URL, wait_until="load", timeout=60000)
+        
+        # 2. Find search box and type the code
+        search_box = page.get_by_placeholder("Search subjects, courses...")
+        await search_box.click()
+        await search_box.fill(code)
+        await asyncio.sleep(random.uniform(0.5, 1.2)) # Stealth delay
+        await page.keyboard.press("Enter")
+        
+        # 3. Wait for the specific result to appear and click it
+        # We look for a link that contains the subject code text
+        result_link = page.locator(f"a:has-text('{code}')").first
+        await result_link.wait_for(state="visible", timeout=15000)
+        await result_link.click()
+        
+        # 4. Wait for the subject detail page to load
+        await page.wait_for_load_state("networkidle")
+        
+        # 5. Extraction Logic
+        subject_name = await page.locator("h1").inner_text()
+        # Clean the name (UOW usually puts code - name)
+        subject_name = subject_name.replace(code, "").strip("- ").strip()
+        
+        # Look for Learning Outcomes
+        # In the UOW handbook, these are usually in a div following an <h3> or inside a specific section
+        outcomes = []
+        
+        # Strategy: Find the heading 'Learning Outcomes' and grab the list following it
+        lo_section = page.locator("section", has_text="Learning Outcomes")
+        lo_items = lo_section.locator("li")
+        
+        count = await lo_items.count()
+        if count == 0:
+            # Fallback if it's not in a <section>
+            lo_items = page.locator("h3:has-text('Learning Outcomes') + div li")
+            count = await lo_items.count()
+
+        for i in range(count):
+            text = await lo_items.nth(i).inner_text()
+            if text.strip():
+                outcomes.append({
+                    "sequence": i + 1,
+                    "outcome": text.strip()
+                })
+        
+        print(f"Found: {subject_name} ({len(outcomes)} outcomes)")
+        
+        return {
+            "university_id": "UOW",
+            "code": code,
+            "name": subject_name,
+            "year": YEAR,
+            "url": page.url,
+            "learning_outcomes": outcomes,
+            "scraped_at": datetime.now().isoformat()
+        }
+
     except Exception as e:
-        log.warning(f"Sync failed: {e}")
+        print(f"Error scraping {code}: {str(e)[:100]}...")
+        return None
 
-    from tqdm import tqdm
-    from db.loader import load_subject 
+async def run_scraper(limit=None):
+    """Main entry point for the scraper"""
+    # You can load your seed_codes.txt here
+    codes = ["ACCY111", "ACCY112", "ACCY200", "ACCY201", "ARTV101"] 
+    if limit:
+        codes = codes[:int(limit)]
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(user_agent="Mozilla/5.0", viewport={"width": 1440, "height": 900})
-        page = context.new_page()
-
-        subjects_meta = get_all_subject_codes(page)
-
-        # Fallback to seed list if discovery fails
-        if not subjects_meta:
-            seed_path = Path("data/seed_codes.txt")
-            if seed_path.exists():
-                log.info("Using seed_codes.txt fallback")
-                subjects_meta = [{"code": c.strip()} for c in seed_path.read_text().splitlines() if c.strip()]
-
-        if limit:
-            subjects_meta = subjects_meta[:limit]
-
-        for meta in tqdm(subjects_meta, unit="subject"):
-            code = meta["code"]
-            raw_path = RAW_DIR / f"{code}.json"
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True) # Set False to watch it locally
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+        )
+        page = await context.new_page()
+        
+        results = []
+        for code in codes:
+            result = await scrape_subject(page, code)
+            if result:
+                results.append(result)
+            await asyncio.sleep(random.uniform(2, 4)) # Don't overwhelm their server
             
-            if raw_path.exists():
-                load_subject(json.loads(raw_path.read_text()))
-                continue
-
-            subject = scrape_subject(page, code)
-            if subject:
-                raw_path.write_text(json.dumps(subject, indent=2))
-                load_subject(subject)
-            
-            time.sleep(random.uniform(DELAY_MIN, DELAY_MAX))
-
-        browser.close()
+        await browser.close()
+        return results
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--limit", type=int)
-    args = parser.parse_args()
-    run(limit=args.limit)
+    # This allows you to run it locally for testing
+    asyncio.run(run_scraper(limit=5))
