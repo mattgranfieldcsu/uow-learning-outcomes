@@ -1,85 +1,66 @@
 name: Scrape UOW Learning Outcomes
 
 on:
-  schedule:
-    # Run at 2am AEST (16:00 UTC) every Sunday
-    - cron: '0 16 * * 0'
   workflow_dispatch:
     inputs:
       limit:
-        description: 'Max subjects to scrape (leave blank for all)'
+        description: 'Number of subjects to scrape'
         required: false
         default: '20'
+  schedule:
+    # Runs at 00:00 UTC every Sunday to keep data fresh
+    - cron: '0 0 * * 0'
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    
+    permissions:
+      contents: write
 
     steps:
-      - name: Checkout
+      - name: Checkout Code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
-          playwright install chromium --with-deps
+          playwright install chromium
 
-      # We skip the cache restore for this run to ensure we aren't 
-      # accidentally loading an empty 'ghost' database.
-      - name: Ensure data directory exists
-        run: mkdir -p data/raw
+      - name: Prepare Data Directory
+        run: mkdir -p data
 
-      - name: Initialise database
-        run: python -m db.loader
-
-      - name: Run scraper
+      - name: Run Scraper
         run: |
-          LIMIT="${{ github.event.inputs.limit }}"
-          if [ -n "$LIMIT" ]; then
-            python scraper/uow_scraper.py --limit "$LIMIT"
-          else
-            python scraper/uow_scraper.py
-          fi
-
-      - name: Tag learning outcomes (Bloom's / category)
+          # CRITICAL: Delete the old database to clear out the "500" error ghosts
+          rm -f data/outcomes.db
+          # Run the scraper with the "Search-First" logic you just pushed
+          python main.py --limit ${{ github.event.inputs.limit || 20 }}
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: python -m db.tagger
-        continue-on-error: true
+          # If you're using OpenAI/Anthropic for the Bloom's tagging, ensure the key is here
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
-      - name: Export CSV snapshot
+      - name: Commit and Push Results
         run: |
-          python db/export_csv.py
-
-      - name: Print stats
-        run: python query.py stats || echo "Stats script not found, skipping."
-
-      # This is the "Safety Net": It saves the DB as an artifact you can download 
-      # directly from the Actions UI if the Git push fails.
-      - name: Upload data artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: outcomes-data
-          path: |
-            data/outcomes.db
-            data/outcomes_snapshot.csv
-          retention-days: 7
-
-      - name: Commit and Push Data
-        run: |
-          git config user.name  "github-actions[bot]"
+          git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/outcomes_snapshot.csv data/outcomes.db
-          # The '|| exit 0' ensures the workflow doesn't fail if there's nothing new to commit
-          git commit -m "chore: update outcomes data [$(date -u +%Y-%m-%d)]" || exit 0
-          git push
+          
+          # Force add the files to bypass any .gitignore rules
+          git add -f data/outcomes.db data/outcomes_snapshot.csv
+          
+          # Only commit if there are actually changes to the data
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Results: Fresh scrape of UOW outcomes [$(date -u +%Y-%m-%d)]"
+            git push origin main
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
