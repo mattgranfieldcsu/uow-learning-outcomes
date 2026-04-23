@@ -1,5 +1,6 @@
 import asyncio
 import random
+import sys
 from playwright.async_api import async_playwright, Page
 from datetime import datetime
 
@@ -22,11 +23,10 @@ async def scrape_subject(page: Page, code: str):
         search_box = page.get_by_placeholder("Search subjects, courses...")
         await search_box.click()
         await search_box.fill(code)
-        await asyncio.sleep(random.uniform(0.5, 1.2)) # Stealth delay
+        await asyncio.sleep(random.uniform(0.5, 1.2)) 
         await page.keyboard.press("Enter")
         
-        # 3. Wait for the specific result to appear and click it
-        # We look for a link that contains the subject code text
+        # 3. Wait for the specific result and click it
         result_link = page.locator(f"a:has-text('{code}')").first
         await result_link.wait_for(state="visible", timeout=15000)
         await result_link.click()
@@ -36,20 +36,14 @@ async def scrape_subject(page: Page, code: str):
         
         # 5. Extraction Logic
         subject_name = await page.locator("h1").inner_text()
-        # Clean the name (UOW usually puts code - name)
         subject_name = subject_name.replace(code, "").strip("- ").strip()
         
-        # Look for Learning Outcomes
-        # In the UOW handbook, these are usually in a div following an <h3> or inside a specific section
         outcomes = []
-        
-        # Strategy: Find the heading 'Learning Outcomes' and grab the list following it
         lo_section = page.locator("section", has_text="Learning Outcomes")
         lo_items = lo_section.locator("li")
         
         count = await lo_items.count()
         if count == 0:
-            # Fallback if it's not in a <section>
             lo_items = page.locator("h3:has-text('Learning Outcomes') + div li")
             count = await lo_items.count()
 
@@ -68,24 +62,20 @@ async def scrape_subject(page: Page, code: str):
             "code": code,
             "name": subject_name,
             "year": YEAR,
-            "url": page.url,
-            "learning_outcomes": outcomes,
-            "scraped_at": datetime.now().isoformat()
+            "learning_outcomes": outcomes
         }
 
     except Exception as e:
         print(f"Error scraping {code}: {str(e)[:100]}...")
         return None
 
-async def run_scraper(limit=None):
-    """Main entry point for the scraper"""
-    # You can load your seed_codes.txt here
-    codes = ["ACCY111", "ACCY112", "ACCY200", "ACCY201", "ARTV101"] 
-    if limit:
-        codes = codes[:int(limit)]
+async def run_scraper(limit=20):
+    # For the pilot, we'll use a hardcoded list or you can point this to a file
+    codes = ["ACCY111", "ACCY112", "ACCY200", "ACCY201", "ACCY202", "ACCY301", "ARTV101"] 
+    codes = codes[:limit]
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True) # Set False to watch it locally
+        browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
         )
@@ -96,11 +86,19 @@ async def run_scraper(limit=None):
             result = await scrape_subject(page, code)
             if result:
                 results.append(result)
-            await asyncio.sleep(random.uniform(2, 4)) # Don't overwhelm their server
+            await asyncio.sleep(random.uniform(2, 4))
             
         await browser.close()
+        # In a real setup, here you would call your db_loader to save results
+        print(f"Scrape complete. Total subjects processed: {len(results)}")
         return results
 
 if __name__ == "__main__":
-    # This allows you to run it locally for testing
-    asyncio.run(run_scraper(limit=5))
+    # Handle the --limit argument from GitHub Actions
+    limit_val = 20
+    if "--limit" in sys.argv:
+        idx = sys.argv.index("--limit")
+        if idx + 1 < len(sys.argv):
+            limit_val = int(sys.argv[idx + 1])
+    
+    asyncio.run(run_scraper(limit=limit_val))
