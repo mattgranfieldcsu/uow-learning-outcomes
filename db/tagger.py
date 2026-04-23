@@ -1,14 +1,14 @@
 """
 db/tagger.py
 
-Uses Claude to classify each learning outcome by:
+Uses Gemini to classify each learning outcome by:
   - category: knowledge | skill | application | value | other
   - bloom_level: remember | understand | apply | analyse | evaluate | create
 
 Run after scraping:
     python -m db.tagger
 
-Requires ANTHROPIC_API_KEY in your environment.
+Requires GEMINI_API_KEY in your environment.
 """
 
 import sqlite3
@@ -17,7 +17,8 @@ import os
 import time
 from pathlib import Path
 
-import anthropic
+# Updated from anthropic to google-genai
+from google import genai
 
 DB_PATH = Path("data/outcomes.db")
 
@@ -44,34 +45,40 @@ Given a list of learning outcomes, classify each one with:
    remember | understand | apply | analyse | evaluate | create
    (choose the HIGHEST level implied by the outcome's verb)
 
-Return ONLY a JSON array, one object per outcome, in the same order:
+Return ONLY a JSON array, one object per outcome, in the same order.
+No explanation, no markdown fences, no preamble.
 [
   {"category": "skill", "bloom_level": "apply"},
   ...
-]
-No explanation, no markdown fences."""
+]"""
 
 
-def tag_batch(outcomes: list[str], client: anthropic.Anthropic) -> list[dict]:
-    """Send up to 20 outcomes to Claude and return classifications."""
+def tag_batch(outcomes: list[str], client: genai.Client) -> list[dict]:
+    """Send up to 20 outcomes to Gemini and return classifications."""
     numbered = "\n".join(f"{i+1}. {o}" for i, o in enumerate(outcomes))
-    message = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=1024,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": numbered}],
+    
+    # Updated logic for Gemini 2.0 Flash
+    response = client.models.generate_content(
+        model="gemini-2.0-flash",
+        config={
+            "system_instruction": SYSTEM_PROMPT,
+            "response_mime_type": "application/json", # Ensures cleaner JSON output
+        },
+        contents=numbered,
     )
-    raw = message.content[0].text.strip()
+    
+    raw = response.text.strip()
     return json.loads(raw)
 
 
 def run(batch_size: int = 20, dry_run: bool = False):
     """Tag all unclassified learning outcomes in the database."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    # Updated to look for Gemini Key
+    api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        raise ValueError("Set ANTHROPIC_API_KEY environment variable")
+        raise ValueError("Set GEMINI_API_KEY environment variable")
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = genai.Client(api_key=api_key)
     conn   = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
 
@@ -79,6 +86,10 @@ def run(batch_size: int = 20, dry_run: bool = False):
     rows = conn.execute(
         "SELECT id, outcome FROM learning_outcomes WHERE category IS NULL ORDER BY id"
     ).fetchall()
+
+    if not rows:
+        print("No unclassified outcomes found.")
+        return
 
     print(f"Tagging {len(rows)} unclassified outcomes in batches of {batch_size}…")
 
@@ -108,7 +119,7 @@ def run(batch_size: int = 20, dry_run: bool = False):
 
         total_tagged += len(batch)
         print(f"  Tagged {total_tagged}/{len(rows)}")
-        time.sleep(0.5)  # avoid rate-limiting
+        time.sleep(1)  # Respect free-tier rate limits
 
     conn.close()
     print("Tagging complete.")
