@@ -1,6 +1,6 @@
-# UOW Learning Outcomes Explorer
+# Learning Outcomes Explorer
 
-Scrapes every subject from the University of Wollongong [Course Handbook](https://courses.uow.edu.au), extracts learning outcomes, stores them in SQLite, and serves a searchable web dashboard.
+Extracts learning outcomes, stores them in SQLite, and serves a searchable web dashboard.
 
 ```
 uow-learning-outcomes/
